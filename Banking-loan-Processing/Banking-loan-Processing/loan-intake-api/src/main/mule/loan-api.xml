@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd 
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+    <http:listener-config name="loan-api-httpListenerConfig">
+        <http:listener-connection host="0.0.0.0" port="8081" />
+    </http:listener-config>
+    <apikit:config name="loan-api-config" api="loan-api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+	<jms:config name="JMS_Config" doc:name="JMS Config" doc:id="45d2ea90-baac-4574-92aa-1be5899c4415" >
+		<jms:active-mq-connection >
+			<jms:caching-strategy >
+				<jms:no-caching />
+			</jms:caching-strategy>
+			<jms:factory-configuration brokerUrl="tcp://localhost:61616" />
+		</jms:active-mq-connection>
+	</jms:config>
+	<db:config name="MySQL_Config" doc:name="Database Config" doc:id="a48d776b-cb76-468d-9dae-ec4dd8425a53" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="root" database="loan_processing_db" />
+	</db:config>
+	<flow name="loan-api-main">
+        <http:listener config-ref="loan-api-httpListenerConfig" path="/api/v1/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:body ><![CDATA[#[{
+    applicationId: vars.applicationId,
+    status: "RECEIVED",
+    receivedAt: now(),
+    statusUrl: "/api/v1/loan-applications/" ++ vars.applicationId
+}]]]></http:body>
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body><![CDATA[#[payload]]]></http:body>
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="loan-api-config" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:BAD_REQUEST">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Bad request"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">400</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_FOUND">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Method not allowed"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">405</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_ACCEPTABLE">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Not acceptable"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">406</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:UNSUPPORTED_MEDIA_TYPE">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Unsupported media type"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">415</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+            <on-error-propagate type="APIKIT:NOT_IMPLEMENTED">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Not Implemented"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">501</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    <flow name="loan-api-console">
+        <http:listener config-ref="loan-api-httpListenerConfig" path="/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:console config-ref="loan-api-config" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:NOT_FOUND">
+                <ee:transform doc:name="Transform Message">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    <flow name="get:\loan-applications\(applicationId):loan-api-config">
+        <ee:transform doc:name="Transform Message">
+            <ee:variables>
+                <ee:set-variable variableName="applicationId">attributes.uriParams.'applicationId'</ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+        <logger level="INFO" message="get:\loan-applications\(applicationId):loan-api-config" />
+		<db:select doc:name="Select" doc:id="b76fa9c5-54a6-4164-968c-550836efdce8" config-ref="MySQL_Config">
+			<db:sql ><![CDATA[SELECT
+    application_id,
+    request_id,
+    status,
+    received_at
+FROM loan_applications
+WHERE application_id = :applicationId;]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+    applicationId: attributes.uriParams.applicationId
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="4002378d-3897-4bac-b440-4a80edb17228" >
+			<when expression="#[isEmpty(payload)]">
+				<set-payload value='#[%dw 2.0&#10;output application/json&#10;---&#10;{&#10;    error: "APPLICATION_NOT_FOUND",&#10;    message: "No loan application found with the provided application ID",&#10;    status: 404&#10;}]' doc:name="Set Payload" doc:id="4b0df24d-09fa-4680-967b-7794d7766987" />
+				<set-variable value="404" doc:name="Set Not Found Status" doc:id="8868528b-1c6f-47ab-9894-663cd9c6ebfb" variableName="httpStatus"/>
+			</when>
+			<otherwise >
+				<set-variable value="200" doc:name="Set Found Status" doc:id="0d39b603-aa4e-4aab-a67e-a60db1167a22" variableName="httpStatus"/>
+			</otherwise>
+		</choice>
+    </flow>
+    <flow name="post:\loan-applications:application\json:loan-api-config">
+        <logger level="INFO" message="Loan application submission request received" doc:name="Log Incoming Loan Application"/>
+		<set-variable value="#[attributes.headers.'X-Request-Id']" doc:name="Read Request ID" doc:id="035c3f7a-9977-41ee-80ae-0d04428f0f78" variableName="requestId"/>
+		<db:select doc:name="Select" doc:id="ed84a509-8f4c-4028-b771-652b7fa76622" config-ref="MySQL_Config" target="existingApplication">
+			<db:sql ><![CDATA[SELECT
+    application_id,
+    request_id,
+    status,
+    received_at
+FROM loan_applications
+WHERE request_id = :requestId;]]></db:sql>
+			<db:input-parameters ><![CDATA[#[{
+    requestId: vars.requestId
+}]]]></db:input-parameters>
+		</db:select>
+		<choice doc:name="Choice" doc:id="64f27a71-d3e5-4373-a321-1a6fd0e334b5" >
+			<when expression="#[!isEmpty(vars.existingApplication)]">
+				<set-payload value='#[%dw 2.0&#10;output application/json&#10;---&#10;{&#10;    applicationId: vars.existingApplication[0].application_id,&#10;    requestId: vars.existingApplication[0].request_id,&#10;    status: vars.existingApplication[0].status,&#10;    message: "Application was already received",&#10;    statusUrl: "/api/v1/loan-applications/" ++ vars.existingApplication[0].application_id&#10;}]' doc:name="Set Payload" doc:id="d5c189cf-63b8-4f9e-9e0a-c837a2700101" />
+				<set-variable value="202" doc:name="Set Duplicate Status" doc:id="104e682a-c9c7-4f82-86cc-c58d074e79e1" variableName="httpStatus"/>
+			</when>
+			<otherwise >
+				<choice doc:name="Choice" doc:id="a4a6ab13-c3d1-4acb-a6a4-85c0dcaacc65" >
+					<when expression="#[payload.documentManifest.documentCount == sizeOf(payload.documentManifest.documents)]">
+						<set-variable value="#['APP-' ++ uuid()]" doc:name="Generate Application ID" doc:id="ba4bc0cb-b7d5-4a66-835f-b89c9c4e39e5" variableName="applicationId" />
+						<db:insert doc:name="Save Loan Application" doc:id="c31a37cd-8e7c-4d10-a03d-2f67a7ea14f9" config-ref="MySQL_Config" target="dbResult">
+					<db:sql><![CDATA[INSERT INTO loan_applications (
+    application_id,
+    request_id,
+    first_name,
+    last_name,
+    date_of_birth,
+    email,
+    mobile,
+    pan_token,
+    employment_type,
+    employer_name,
+    months_in_current_job,
+    product_code,
+    requested_amount,
+    currency,
+    tenure_months,
+    purpose,
+    property_value,
+    monthly_gross_income,
+    monthly_net_income,
+    existing_monthly_obligations,
+    declared_other_income,
+    document_manifest
+)
+VALUES (
+    :applicationId,
+    :requestId,
+    :firstName,
+    :lastName,
+    :dateOfBirth,
+    :email,
+    :mobile,
+    :panToken,
+    :employmentType,
+    :employerName,
+    :monthsInCurrentJob,
+    :productCode,
+    :requestedAmount,
+    :currency,
+    :tenureMonths,
+    :purpose,
+    :propertyValue,
+    :monthlyGrossIncome,
+    :monthlyNetIncome,
+    :existingMonthlyObligations,
+    :declaredOtherIncome,
+    :documentManifest
+)]]></db:sql>
+					<db:parameter-types />
+					<db:input-parameters><![CDATA[#[{
+    applicationId: vars.applicationId,
+    requestId: vars.requestId,
+    firstName: payload.applicant.firstName,
+    lastName: payload.applicant.lastName,
+    dateOfBirth: payload.applicant.dateOfBirth,
+    email: payload.applicant.email,
+    mobile: payload.applicant.mobile,
+    panToken: payload.applicant.panToken,
+    employmentType: payload.applicant.employmentType,
+    employerName: payload.applicant.employerName,
+    monthsInCurrentJob: payload.applicant.monthsInCurrentJob,
+    productCode: payload.product.productCode,
+    requestedAmount: payload.product.requestedAmount,
+    currency: payload.product.currency,
+    tenureMonths: payload.product.tenureMonths,
+    purpose: payload.product.purpose,
+    propertyValue: payload.product.propertyValue,
+    monthlyGrossIncome: payload.finances.monthlyGrossIncome,
+    monthlyNetIncome: payload.finances.monthlyNetIncome,
+    existingMonthlyObligations: payload.finances.existingMonthlyObligations,
+    declaredOtherIncome: payload.finances.declaredOtherIncome,
+    documentManifest: write(payload.documentManifest, "application/json")
+}]]]></db:input-parameters>
+				</db:insert>
+						<jms:publish doc:name="Publish Loan Application" doc:id="110782af-98a8-49e9-b1a7-81803beb3e78" config-ref="JMS_Config" destination="loan.verification.queue" sendCorrelationId="NEVER">
+					<jms:message>
+						<jms:body><![CDATA[#[output application/json
+---
+{
+    applicationId: vars.applicationId,
+    requestId: vars.requestId,
+    applicant: payload.applicant,
+    product: payload.product,
+    finances: payload.finances,
+    documentManifest: payload.documentManifest
+}]]]></jms:body>
+					</jms:message>
+				</jms:publish>
+					</when>
+					<otherwise >
+						<set-payload value='#[%dw 2.0&#10;output application/json&#10;---&#10;{&#10;    error: "VALIDATION_FAILED",&#10;    message: "Document count does not match the number of documents provided",&#10;    status: 422&#10;}]' doc:name="Set Payload" doc:id="71352c8f-a8cc-42c7-9578-87f2ba8904ff" />
+						<set-variable value="422" doc:name="Set Validation Error Status" doc:id="d2b9b786-50fc-45b3-b598-75d9f0f1f24d" variableName="httpStatus"/>
+					</otherwise>
+				</choice>
+			</otherwise>
+		</choice>
+    </flow>
+	<flow name="loan-apiFlow" doc:id="7dadbd86-a01e-45f0-a3c6-41aa761c9a83" >
+		<db:select doc:name="Select" doc:id="34ceeee0-95a0-438c-8775-cbe6effaf8b1" config-ref="MySQL_Config"/>
+	</flow>
+</mule>

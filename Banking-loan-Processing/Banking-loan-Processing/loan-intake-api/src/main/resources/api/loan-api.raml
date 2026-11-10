@@ -1,0 +1,217 @@
+
+#%RAML 1.0
+title: Banking Loan Application API
+version: v1
+baseUri: http://localhost:8081/api/v1
+mediaType: application/json
+protocols:
+  - HTTP
+
+types:
+  Applicant:
+    type: object
+    additionalProperties: false
+    properties:
+      firstName:
+        type: string
+        minLength: 1
+      lastName:
+        type: string
+        minLength: 1
+      dateOfBirth:
+        type: date-only
+      email:
+        type: string
+      mobile:
+        type: string
+      panToken:
+        type: string
+      employmentType:
+        type: string
+        enum: [SALARIED, SELF_EMPLOYED]
+      employerName:
+        type: string
+      monthsInCurrentJob:
+        type: integer
+        minimum: 0
+
+  Product:
+    type: object
+    additionalProperties: false
+    properties:
+      productCode:
+        type: string
+      requestedAmount:
+        type: number
+        minimum: 1
+      currency:
+        type: string
+        enum: [INR]
+      tenureMonths:
+        type: integer
+        minimum: 1
+      purpose:
+        type: string
+      propertyValue?:
+        type: number
+
+  Finances:
+    type: object
+    additionalProperties: false
+    properties:
+      monthlyGrossIncome:
+        type: number
+        minimum: 0
+      monthlyNetIncome:
+        type: number
+        minimum: 0
+      existingMonthlyObligations:
+        type: number
+        minimum: 0
+      declaredOtherIncome:
+        type: number
+        minimum: 0
+
+  Document:
+    type: object
+    additionalProperties: false
+    properties:
+      docType:
+        type: string
+      fileName:
+        type: string
+
+  DocumentManifest:
+    type: object
+    additionalProperties: false
+    properties:
+      stagingFolder:
+        type: string
+      documentCount:
+        type: integer
+        minimum: 0
+      documents:
+        type: array
+        items: Document
+
+  LoanApplicationRequest:
+    type: object
+    additionalProperties: false
+    properties:
+      applicant: Applicant
+      product: Product
+      finances: Finances
+      documentManifest: DocumentManifest
+
+  LoanApplicationAccepted:
+    type: object
+    properties:
+      applicationId: string
+      status: string
+      receivedAt: datetime
+      statusUrl: string
+
+  ErrorResponse:
+    type: object
+    properties:
+      errorCode: string
+      message: string
+      timestamp?: datetime
+
+  LoanApplicationStatus:
+    type: object
+    properties:
+      applicationId: string
+      status: string
+      stage?: string
+      documents?: object
+      decision?: object
+
+/loan-applications:
+  post:
+    description: Submit a new loan application for processing.
+    headers:
+      X-Request-Id:
+        type: string
+        required: true
+        description: Unique identifier used for idempotent submission.
+    body:
+      application/json:
+        type: LoanApplicationRequest
+        example:
+          applicant:
+            firstName: Priya
+            lastName: Narayanan
+            dateOfBirth: 1991-07-14
+            email: priya.narayanan@example.com
+            mobile: "+91-98400-55127"
+            panToken: tok_pan_9f41ac82
+            employmentType: SALARIED
+            employerName: Zenith Software Services
+            monthsInCurrentJob: 46
+          product:
+            productCode: HOME-LOAN-STD
+            requestedAmount: 4500000
+            currency: INR
+            tenureMonths: 240
+            purpose: PROPERTY_PURCHASE
+            propertyValue: 6000000
+          finances:
+            monthlyGrossIncome: 185000
+            monthlyNetIncome: 142000
+            existingMonthlyObligations: 28000
+            declaredOtherIncome: 0
+          documentManifest:
+            stagingFolder: /data/loans/staging/APP-2026-0033118
+            documentCount: 5
+            documents:
+              - docType: IDENTITY_PROOF
+                fileName: pan.pdf
+              - docType: ADDRESS_PROOF
+                fileName: aadhaar.pdf
+              - docType: PAYSLIP
+                fileName: payslip_jul.pdf
+              - docType: PAYSLIP
+                fileName: payslip_aug.pdf
+              - docType: BANK_STATEMENT
+                fileName: stmt_6m.pdf
+    responses:
+      202:
+        description: Application accepted for asynchronous processing.
+        body:
+          application/json:
+            type: LoanApplicationAccepted
+      400:
+        description: Missing or malformed mandatory information.
+        body:
+          application/json:
+            type: ErrorResponse
+      422:
+        description: Invalid product or loan eligibility limits.
+        body:
+          application/json:
+            type: ErrorResponse
+      500:
+        description: Internal server error.
+        body:
+          application/json:
+            type: ErrorResponse
+
+  /{applicationId}:
+    uriParameters:
+      applicationId:
+        type: string
+        required: true
+    get:
+      description: Retrieve loan application status and decision.
+      responses:
+        200:
+          description: Application status retrieved successfully.
+          body:
+            application/json:
+              type: LoanApplicationStatus
+        404:
+          description: Application not found.
+          body:
+            application/json:
+              type: ErrorResponse
